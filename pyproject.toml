@@ -25,6 +25,7 @@ dependencies = [
   "submitit",
   "llvmlite>=0.44",
   "numba>=0.61",
+  "lion-pytorch",
 ]
 
 [project.optional-dependencies]

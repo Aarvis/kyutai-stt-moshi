@@ -1,0 +1,34 @@
+# Example configuration for fine-tuning a voice embedding (train_voice.py)
+# Dataset format as in kyutai/DailyTalkContiguous, but mono, see https://github.com/kyutai-labs/delayed-streams-modeling/issues/4#issuecomment-3079816523
+batch_size: 6
+ckpt_freq: 10
+data:
+  eval_data: ''
+  shuffle: true
+  train_data: '' # Fill
+do_eval: false
+duration_sec: 15
+eval_freq: 1
+first_codebook_weight_multiplier: 100.0
+full_finetuning: true
+gradient_checkpointing: true
+log_freq: 10
+lora:
+  enable: false
+  ft_embed: true
+  rank: 128
+  scaling: 2.0
+max_steps: 300
+moshi_paths:
+  hf_repo_id: kyutai/tts-1.6b-en_fr
+optim:
+  lr: 4.0e-03
+  pct_start: 0.05
+  weight_decay: 0.1
+run_dir: '' # Fill
+save_adapters: true
+seed: 0
+text_padding_weight: 0.5
+# Note: train_voice.py will not overwrite run_dir, but rather continue from the last checkpoint found in there.
+# For bootstrapping put your initial embedding into {run_dir}/speaker.wav@0.safetensors
+overwrite_run_dir: true
