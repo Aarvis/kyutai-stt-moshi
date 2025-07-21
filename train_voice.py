@@ -67,6 +67,27 @@ def train(config: str):
     logger.info("Closed everything!")
 
 
+def add_tts_delay_steps(codes, delay_steps, text_padding_token_id, zero_token_id):
+    """
+    Shifts training data for TTS by padding codes with delay_steps tokens on the right
+    for dimension 0 (the text tokens) and on the left for the remaining dimensions (audio tokens).
+    """
+    B, K, T = codes.shape
+
+    padded = torch.zeros(
+        (B, K, T + delay_steps), dtype=codes.dtype, device=codes.device
+    )
+
+    padded[:, 0, :T] = codes[:, 0, :]
+    padded[:, 0, T:] = text_padding_token_id
+
+    if K > 1:
+        padded[:, 1:, delay_steps:] = codes[:, 1:, :]
+        padded[:, 1:, :delay_steps] = zero_token_id
+
+    return padded
+
+
 def _train(args: TrainArgs, exit_stack: ExitStack):
     # 1. Initial setup and checks
     set_random_seed(args.seed)
@@ -185,6 +206,7 @@ def _train(args: TrainArgs, exit_stack: ExitStack):
     # Note: hard-coded cfg_coef and max_speakers in this PoC, taken from moshi.models.tts.TTSModel and tts_pytorch.py
     max_speakers = 5
     cfg_coef = 2.0
+    delay_steps = int(checkpoint_info.tts_config["audio_delay"] * mimi.frame_rate)
     fake_tts = collections.namedtuple(
         "FakeTTSModel", ["max_speakers", "valid_cfg_conditionings"]
     )(max_speakers, [cfg_coef])
@@ -226,6 +248,18 @@ def _train(args: TrainArgs, exit_stack: ExitStack):
         world_size=get_world_size(),  # DDP world_size
         is_eval=False,
     )
+
+    # Debug code to display show relative positions of text/audio tokens from a batch
+    #
+    # for i in range(1):
+    #     batch = next(data_loader)
+    #     batch.codes = add_tts_delay_steps(batch.codes, delay_steps, model.text_padding_token_id, model.zero_token_id)
+    #     tokens = batch.codes[0, 0, :].flatten().cpu().detach().numpy().tolist()
+    #     audio_tokens = batch.codes[0, 1, :].flatten().cpu().detach().numpy().tolist()
+    #     words = [spm.decode([_]) for _ in tokens]
+    #     logger.info(spm.decode(tokens))
+    #     logger.info([_ for _ in zip(tokens, words, audio_tokens)])
+    # quit()
 
     if args.do_eval:
         eval_data_loader = build_data_loader(
@@ -304,21 +338,26 @@ def _train(args: TrainArgs, exit_stack: ExitStack):
 
         optimizer.zero_grad()
 
-        prepared = initial_prepared.copy()
-        prepared["speaker_wavs"] = TensorCondition(
-            all_speaker_wavs.to(dtype=param_dtype),
-            initial_prepared["speaker_wavs"].mask.detach().clone(),
-        )
-
-        condition_tensors = model.condition_provider(prepared)
-
         loss = torch.tensor([0.0], device="cuda")
         n_batch_tokens: int = 0
         n_real_tokens: int = 0
 
         for i in range(args.num_microbatches):
             batch = next(data_loader)
-            codes = batch.codes
+            codes = add_tts_delay_steps(
+                batch.codes,
+                delay_steps,
+                model.text_padding_token_id,
+                model.zero_token_id,
+            )
+
+            prepared = initial_prepared.copy()
+            prepared["speaker_wavs"] = TensorCondition(
+                all_speaker_wavs.to(dtype=param_dtype),
+                initial_prepared["speaker_wavs"].mask.detach().clone(),
+            )
+
+            condition_tensors = model.condition_provider(prepared)
 
             # forward / backward
             output = model(codes=codes, condition_tensors=condition_tensors)
