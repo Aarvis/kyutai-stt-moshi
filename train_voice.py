@@ -45,7 +45,7 @@ from finetune.monitoring.utils import set_logger
 from finetune.utils import TrainState, logged_closing, set_random_seed
 from finetune.wrapped_model import get_fsdp_model
 from moshi.models import loaders
-from moshi.models.tts import TTSModel
+from moshi.models.tts import TTSModel, TokenIds, StateMachine, script_to_entries
 from moshi.conditioners.base import TensorCondition, ConditionType
 
 from safetensors.torch import save_file
@@ -86,6 +86,76 @@ def add_tts_delay_steps(codes, delay_steps, text_padding_token_id, zero_token_id
         padded[:, 1:, :delay_steps] = zero_token_id
 
     return padded
+
+
+# Note: this is slow (e.g. takes ~1s per batch of 16 samples with length of 30s).
+# It depends only on the text input, but it's currently unnecessarily re-executed
+# for each batch supplied by the data loader during the training loop.
+# A more efficient approach would be to pretokenize the text/audio and premux
+# the text just once, cache the result somewhere, and train multiple steps
+# over such prepared dataset.
+#
+def apply_lookahead_mux(codes, spm, lookahead, frame_rate, token_ids):
+    """
+    Performs the "lookahead token muxing" on the text token dimension (0)
+    of codes representing the ground truth. This emulates the work of
+    moshi.models.tts.StateMachine performed at inference time: at any point
+    the TTS model uses a combination of two tokens for the next text token
+    prediction, one input token is taken from the current word and another
+    from the lookahead word (except at the end of sequence).
+    """
+    T = codes.shape[-1]
+    text_tokens = codes[:, 0, :].cpu().detach().numpy()
+    texts = [
+        spm.decode([token for token in _.tolist() if token != token_ids.new_word])
+        for _ in text_tokens
+    ]
+
+    for bi, text in enumerate(texts):
+        entries = script_to_entries(
+            spm,
+            token_ids,
+            frame_rate,
+            [text],
+            multi_speaker=True,
+            padding_between=1,
+        )
+
+        machine = StateMachine(
+            token_ids=token_ids,
+            second_stream_ahead=lookahead,
+            # from TTSModel.from_checkpoint_info:
+            max_padding=8,
+            initial_padding=2,
+        )
+
+        sm_state = machine.new_state(entries)
+        muxed_tokens = torch.full(
+            (T,), machine.token_ids.pad, dtype=torch.long, device=codes.device
+        )
+        muxed_tokens[0] = codes[bi, 0, 0]
+
+        mux_offset = 0  # Pointer for the output muxed_tokens tensor
+        inp_offset = 0  # Pointer for the input codes ground truth
+
+        while (
+            inp_offset < T
+            and mux_offset < T - 1
+            and (sm_state.end_step is None or mux_offset <= sm_state.end_step)
+        ):
+            muxed_tokens[mux_offset + 1], consumed_new_word = machine.process(
+                mux_offset, sm_state, codes[bi, 0, inp_offset]
+            )
+            mux_offset += 1
+
+            if consumed_new_word:
+                while inp_offset < T and codes[bi, 0, inp_offset] != token_ids.new_word:
+                    inp_offset += 1
+                inp_offset += 1  # also skip over special new_word token
+
+        codes[bi, 0, :] = muxed_tokens
+
+    return codes
 
 
 def _train(args: TrainArgs, exit_stack: ExitStack):
@@ -332,6 +402,8 @@ def _train(args: TrainArgs, exit_stack: ExitStack):
     model.train()
     torch.cuda.empty_cache()
 
+    token_ids = TokenIds(model.text_card + 1)
+
     while state.step < args.max_steps:
         state.start_step()
         is_last_step = state.step == args.max_steps
@@ -344,8 +416,22 @@ def _train(args: TrainArgs, exit_stack: ExitStack):
 
         for i in range(args.num_microbatches):
             batch = next(data_loader)
+            codes = batch.codes
+
+            # Note: training of a voice embedding also seems to work "ok" without apply_lookahead_mux,
+            # which may slow it down considerably depending on the training dataset's size.
+            # However, it is included here to get a closer match to the inputs that the model works
+            # with during inference.
+            codes = apply_lookahead_mux(
+                codes,
+                spm,
+                checkpoint_info.tts_config["second_stream_ahead"],
+                mimi.frame_rate,
+                token_ids,
+            )
+
             codes = add_tts_delay_steps(
-                batch.codes,
+                codes,
                 delay_steps,
                 model.text_padding_token_id,
                 model.zero_token_id,
