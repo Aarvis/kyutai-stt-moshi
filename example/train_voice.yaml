@@ -1,18 +1,19 @@
 # Example configuration for fine-tuning a voice embedding (train_voice.py)
 # Dataset format as in kyutai/DailyTalkContiguous, but mono, see https://github.com/kyutai-labs/delayed-streams-modeling/issues/4#issuecomment-3079816523
-batch_size: 6
-ckpt_freq: 10
+batch_size: 16
+num_microbatches: 1
+ckpt_freq: 1
 data:
   eval_data: ''
   shuffle: true
   train_data: '' # Fill
 do_eval: false
-duration_sec: 15
+duration_sec: 30
 eval_freq: 1
 first_codebook_weight_multiplier: 100.0
 full_finetuning: true
 gradient_checkpointing: true
-log_freq: 10
+log_freq: 1
 lora:
   enable: false
   ft_embed: true
@@ -22,7 +23,7 @@ max_steps: 300
 moshi_paths:
   hf_repo_id: kyutai/tts-1.6b-en_fr
 optim:
-  lr: 4.0e-03
+  lr: 4.0e-02
   pct_start: 0.05
   weight_decay: 0.1
 run_dir: '' # Fill
