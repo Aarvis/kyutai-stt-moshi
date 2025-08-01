@@ -151,6 +151,8 @@ def _train(args: TrainArgs, exit_stack: ExitStack):
     model = get_fsdp_model(args, checkpoint_info)
 
     spm = checkpoint_info.get_text_tokenizer()
+    audio_delay = (checkpoint_info.stt_config.get("audio_delay_seconds", 0.0),)
+    main_logger_info(f"STT audio_delay: {audio_delay}s")
 
     interleaver = Interleaver(
         spm,
@@ -159,6 +161,7 @@ def _train(args: TrainArgs, exit_stack: ExitStack):
         model.end_of_text_padding_id,
         model.zero_token_id,
         keep_main_only=True,
+        audio_delay=-audio_delay,
     )
     interleaved_tokenizer = InterleavedTokenizer(
         mimi, interleaver, duration_sec=args.duration_sec

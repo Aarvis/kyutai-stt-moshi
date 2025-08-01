@@ -67,27 +67,6 @@ def train(config: str):
     logger.info("Closed everything!")
 
 
-def add_tts_delay_steps(codes, delay_steps, text_padding_token_id, zero_token_id):
-    """
-    Shifts training data for TTS by padding codes with delay_steps tokens on the right
-    for dimension 0 (the text tokens) and on the left for the remaining dimensions (audio tokens).
-    """
-    B, K, T = codes.shape
-
-    padded = torch.zeros(
-        (B, K, T + delay_steps), dtype=codes.dtype, device=codes.device
-    )
-
-    padded[:, 0, :T] = codes[:, 0, :]
-    padded[:, 0, T:] = text_padding_token_id
-
-    if K > 1:
-        padded[:, 1:, delay_steps:] = codes[:, 1:, :]
-        padded[:, 1:, :delay_steps] = zero_token_id
-
-    return padded
-
-
 # Note: this is slow (e.g. takes ~1s per batch of 16 samples with length of 30s).
 # It depends only on the text input, but it's currently unnecessarily re-executed
 # for each batch supplied by the data loader during the training loop.
@@ -276,7 +255,6 @@ def _train(args: TrainArgs, exit_stack: ExitStack):
     # Note: hard-coded cfg_coef and max_speakers in this PoC, taken from moshi.models.tts.TTSModel and tts_pytorch.py
     max_speakers = 5
     cfg_coef = 2.0
-    delay_steps = int(checkpoint_info.tts_config["audio_delay"] * mimi.frame_rate)
     fake_tts = collections.namedtuple(
         "FakeTTSModel", ["max_speakers", "valid_cfg_conditionings"]
     )(max_speakers, [cfg_coef])
@@ -295,6 +273,8 @@ def _train(args: TrainArgs, exit_stack: ExitStack):
         p.requires_grad = True
 
     spm = checkpoint_info.get_text_tokenizer()
+    audio_delay = checkpoint_info.tts_config.get("audio_delay", 0.0)
+    main_logger_info(f"TTS audio_delay: {audio_delay}s")
 
     interleaver = Interleaver(
         spm,
@@ -303,6 +283,7 @@ def _train(args: TrainArgs, exit_stack: ExitStack):
         model.end_of_text_padding_id,
         model.zero_token_id,
         keep_main_only=True,
+        audio_delay=audio_delay,
     )
     interleaved_tokenizer = InterleavedTokenizer(
         mimi, interleaver, duration_sec=args.duration_sec
@@ -428,13 +409,6 @@ def _train(args: TrainArgs, exit_stack: ExitStack):
                 checkpoint_info.tts_config["second_stream_ahead"],
                 mimi.frame_rate,
                 token_ids,
-            )
-
-            codes = add_tts_delay_steps(
-                codes,
-                delay_steps,
-                model.text_padding_token_id,
-                model.zero_token_id,
             )
 
             prepared = initial_prepared.copy()
