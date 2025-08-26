@@ -1,15 +1,15 @@
 # Example configuration for fine-tuning a LoRA adapter for voice recognition (train_stt.py)
 # Note: as of 2025-07-16 requires a hacked version of lm.py. Dataset format as in kyutai/DailyTalkContiguous, but mono.
 # See https://github.com/kyutai-labs/delayed-streams-modeling/issues/4#issuecomment-3079816523 
-batch_size: 1
+batch_size: 10
 ckpt_freq: 10
 data:
-  eval_data: ''
+  eval_data: 'eval_data/test_data.jsonl'
   shuffle: true
   train_data: 'data/test_data.jsonl' # Fill
-do_eval: false
+do_eval: true
 duration_sec: 10
-eval_freq: 1
+eval_freq: 2
 first_codebook_weight_multiplier: 100.0
 full_finetuning: false
 gradient_checkpointing: true
