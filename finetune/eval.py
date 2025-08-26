@@ -27,6 +27,7 @@ def evaluate(
     state: TrainState,
     args: TrainArgs,
 ):
+    main_logger_info("state:",state)
     num_samples = torch.tensor([0], device="cuda", dtype=torch.long)
 
     text_loss = torch.tensor(0.0).cuda()
@@ -56,14 +57,15 @@ def evaluate(
                     model.end_of_text_padding_id,
                 },
             )
-            audio_loss += compute_loss_with_mask(
-                output.logits,
-                codes[:, model.audio_offset : model.audio_offset + model.dep_q],
-                output.mask,
-                mode="audio",
-                first_codebook_weight_multiplier=args.first_codebook_weight_multiplier,
-            )
-    eval_loss = text_loss + audio_loss
+            # audio_loss += compute_loss_with_mask(
+            #     output.logits,
+            #     codes[:, model.audio_offset : model.audio_offset + model.dep_q],
+            #     output.mask,
+            #     mode="audio",
+            #     first_codebook_weight_multiplier=args.first_codebook_weight_multiplier,
+            # )
+    # eval_loss = text_loss + audio_loss
+    eval_loss = text_loss 
     all_num_samples = [torch.zeros_like(num_samples) for _ in range(get_world_size())]
 
     torch.distributed.all_gather(all_num_samples, num_samples)
@@ -74,14 +76,14 @@ def evaluate(
 
     dist.all_reduce(eval_loss, op=dist.ReduceOp.SUM)
     dist.all_reduce(text_loss, op=dist.ReduceOp.SUM)
-    dist.all_reduce(audio_loss, op=dist.ReduceOp.SUM)
+    # dist.all_reduce(audio_loss, op=dist.ReduceOp.SUM)
     text_loss /= total_num_samples
-    audio_loss /= total_num_samples
+    # audio_loss /= total_num_samples
     eval_loss /= total_num_samples
 
     state.this_eval_loss = eval_loss.item()
     state.this_eval_perplexity = (2**eval_loss).item()
-    state.this_audio_loss = audio_loss.item()
+    # state.this_audio_loss = audio_loss.item()
     state.this_text_loss = text_loss.item()
 
     # train mode!
