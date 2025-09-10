@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 /data
 /eval_data
+/10_data
 
 # C extensions
 *.so -- we like our plugin sos

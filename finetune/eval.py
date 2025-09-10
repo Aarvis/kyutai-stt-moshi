@@ -27,7 +27,7 @@ def evaluate(
     state: TrainState,
     args: TrainArgs,
 ):
-    main_logger_info("state:",state)
+    main_logger_info(f"state:{state}")
     num_samples = torch.tensor([0], device="cuda", dtype=torch.long)
 
     text_loss = torch.tensor(0.0).cuda()
