@@ -2,3 +2,4 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export CUDA_VISIBLE_DEVICES=0
 uv run torchrun --nproc-per-node 1 -m train_stt example/smoke_train_stt.yaml
+uv run torchrun --nproc-per-node 1 -m train_stt example/smoke_full_tune_stt_hindi_tok.yaml

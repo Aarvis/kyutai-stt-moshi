@@ -1,0 +1,36 @@
+# Example configuration for fine-tuning a LoRA adapter for voice recognition (train_stt.py)
+# Note: as of 2025-07-16 requires a hacked version of lm.py. Dataset format as in kyutai/DailyTalkContiguous, but mono.
+# See https://github.com/kyutai-labs/delayed-streams-modeling/issues/4#issuecomment-3079816523 
+batch_size: 150
+ckpt_freq: 250
+data:
+  eval_data: 'eval_data/test_data.jsonl'
+  shuffle: true
+  train_data: '10_data/train_data.jsonl' #'10_data/train_data.jsonl' # Fill
+do_eval: false
+duration_sec: 8
+eval_freq: 2
+first_codebook_weight_multiplier: 100.0
+full_finetuning: true
+gradient_checkpointing: false
+log_freq: 20
+lora:
+  enable: false
+  ft_embed: false
+  rank: 32
+  scaling: 2.0
+max_steps: 500
+moshi_paths:
+  hf_repo_id: kyutai/stt-1b-en_fr
+  moshi_path: null                          # let it pick the default from HF
+  mimi_path: null                           # idem
+  tokenizer_path: 'hindi_tokenizer/hi_sp.model'    # ← your SPM file on disk
+  config_path: 'hindi_tokenizer/config.json' # ← the edited config from (B)
+optim:
+  lr: 1e-4 #2.0e-05
+  pct_start: 0.05
+  weight_decay: 0.01
+run_dir: 'run_dir_5' # Fill
+save_adapters: false
+seed: 0
+text_padding_weight: 0.3
